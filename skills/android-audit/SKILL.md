@@ -1,9 +1,9 @@
 ---
 name: android-audit
 description: >
-  Full Android project audit with parallel subagent delegation. Scans project
-  structure, dispatches 9 specialized agents, aggregates into health score 0-100,
-  generates prioritized action plan. Triggers on: "audit", "full android check",
+  Full Android audit orchestration. Builds audit-context.json, dispatches
+  specialist agents against that shared evidence, then applies canonical
+  gate and cap logic. Triggers on: "audit", "full android check",
   "analyze my android project", "project health check".
 user-invokable: true
 argument-hint: "[path]"
@@ -11,26 +11,18 @@ argument-hint: "[path]"
 
 # Android Full Audit
 
-Comprehensive project audit using 9 parallel specialized agents.
+## Flow
 
-## How to Run
+1. Run `scripts/build_audit_context.py` and write `generated/audit-context.json`
+2. Dispatch the relevant agents with that JSON as the shared input
+3. Collect category findings and category scores if available
+4. Run `scripts/score.py` to apply deterministic gates and caps
+5. Generate:
+   - `ANDROID-AUDIT-REPORT.md`
+   - `ANDROID-ACTION-PLAN.md`
 
-```
-/android audit [path]
-```
+## Reporting Rules
 
-## Orchestration
-
-This sub-skill is invoked by the main `/android` skill when the `audit` command is used. It follows the 6-step orchestration flow defined in the main `android/SKILL.md`.
-
-1. **Scan** — `scan_project.py` discovers structure
-2. **Extract** — `analyze_gradle.py` + `analyze_manifest.py` get config
-3. **Classify** — Detect app type
-4. **Dispatch** — 9 agents in parallel
-5. **Aggregate** — Weighted score
-6. **Report** — Two markdown files
-
-## Output Files
-
-- `ANDROID-AUDIT-REPORT.md` — Executive summary + per-category findings
-- `ANDROID-ACTION-PLAN.md` — Prioritized recommendations (Critical → Low)
+- Separate verified findings from preflight warnings.
+- Mark any runtime-only or policy-only claim as `external evidence required`.
+- Do not emit a final 0-100 score if category scores were not produced.

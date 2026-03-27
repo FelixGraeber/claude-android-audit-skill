@@ -1,195 +1,182 @@
 ---
 name: android
 description: >
-  Comprehensive Android project assessment. Analyzes architecture patterns,
-  performance optimization, security posture, Android 16 compatibility,
-  Material Design compliance, accessibility, testing strategy, build system
-  health, and Play Store readiness. Supports Kotlin/Compose and legacy
-  XML/Java projects. Triggers on: "android audit", "android assessment",
-  "android review", "android project health", "android security",
-  "android performance", "android compatibility".
+  Android project audit and preflight skill. Builds a shared audit_context.json
+  from static project evidence, then uses specialist agents to interpret that
+  evidence with explicit confidence and deterministic gate caps. Supports
+  Kotlin/Compose and XML/Java repos, including library-only projects. Triggers on:
+  "android audit", "android assessment", "android review", "android project health".
 user-invokable: true
 argument-hint: "[command] [path]"
 ---
 
-# Android Project Assessment Skill
+# Android Project Audit Skill
 
 ## Quick Reference
 
 | Command | Description |
 |---------|-------------|
-| `/android audit [path]` | Full 9-category audit with scores and action plan |
-| `/android architecture [path]` | Architecture patterns only (Compose, UDF, DI, Nav) |
-| `/android performance [path]` | Performance only (Baseline Profiles, R8, recomposition) |
-| `/android security [path]` | Security only (OWASP Mobile Top 10 2024) |
-| `/android compat [path]` | Android 16 (API 36) compatibility check |
-| `/android design [path]` | Material Design 3 / M3 Expressive compliance |
-| `/android accessibility [path]` | Accessibility audit (touch targets, semantics, contrast) |
-| `/android testing [path]` | Testing strategy and coverage assessment |
-| `/android build [path]` | Build system health (Gradle, AGP, catalogs) |
-| `/android playstore [path]` | Play Store readiness and policy compliance |
-| `/android score [path]` | Quick overall score without detailed findings |
+| `/android audit [path]` | Full multi-category audit using a shared evidence bundle |
+| `/android architecture [path]` | Architecture and module structure review |
+| `/android performance [path]` | Static performance preflight |
+| `/android security [path]` | OWASP-oriented security audit |
+| `/android compat [path]` | Android 15/16 compatibility preflight |
+| `/android design [path]` | Design system implementation audit |
+| `/android accessibility [path]` | Accessibility preflight from static evidence |
+| `/android testing [path]` | Testing strategy and risk coverage review |
+| `/android build [path]` | Build system and dependency hygiene review |
+| `/android playstore [path]` | Play preflight from source evidence |
+
+## Evidence Contract
+
+The canonical static evidence contract is:
+
+- `schemas/audit_context.schema.json`
+- `schemas/finding.schema.json`
+
+The canonical rule registry is:
+
+- `rules/rules.json`
+- `rules/facts.json`
+
+Generated markdown references:
+
+- `references/quality-gates.md`
+- `references/scoring-weights.md`
+
+Agents should consume `audit-context.json` instead of re-parsing the repo freehand.
 
 ## Project Detection
 
-Scan for presence of these files to confirm an Android project:
+Confirm an Android project by scanning for at least one of:
 
-1. `**/build.gradle.kts` or `**/build.gradle` (root and module level)
+1. `**/build.gradle.kts` or `**/build.gradle`
 2. `**/settings.gradle.kts` or `**/settings.gradle`
-3. `**/AndroidManifest.xml`
-4. `**/gradle/libs.versions.toml` (version catalog)
+3. `**/src/main/AndroidManifest.xml`
 
-If none found at `[path]`, report error and stop.
+If none are present at `[path]`, stop and report that no Android project was detected.
 
-## App Type Classification
+## Project Classification
 
-Determine project type before dispatching agents — agents adapt checks accordingly.
+Classification is deterministic and happens before agent dispatch.
 
-| Type | Detection Criteria |
-|------|-------------------|
-| `single-module` | Only one module with `com.android.application` plugin |
-| `multi-module` | Multiple modules in `settings.gradle.kts` includes |
-| `compose-first` | `compose = true` in build config, Compose dependencies, no/minimal XML layouts |
-| `xml-legacy` | XML layouts present, no Compose dependencies |
-| `hybrid` | Both Compose and XML layouts coexist |
-| `sdk-library` | `com.android.library` plugin only, no application module |
+Ordered checks:
 
-Classification uses ordered checks:
-1. Count modules from `settings.gradle.kts` → single vs multi
-2. Check for `compose` in build files → compose-first vs xml-legacy vs hybrid
-3. Check for `com.android.library` without `com.android.application` → sdk-library
+1. `sdk-library` if there is no application module and at least one Android library module
+2. `single-module` vs `multi-module` from discovered modules
+3. `compose-first` vs `xml-legacy` vs `hybrid` from `src/main` sources only
 
-## Audit Orchestration Flow
+The resulting `project_type` is stored in `audit-context.json` with:
 
-### Step 1: Project Scan
-```
-Glob: **/build.gradle.kts, **/settings.gradle.kts, **/AndroidManifest.xml
-Glob: **/gradle/libs.versions.toml
-Glob: **/src/main/**/*.kt, **/src/main/**/*.java
-Glob: **/src/main/res/layout/**/*.xml
+- `repo_kind`
+- `app_shape`
+- `ui_stack`
+
+## Orchestration Flow
+
+### Step 1: Scan Structure
+
+Run:
+
+```bash
+python skills/android/scripts/scan_project.py [path] --json
 ```
 
-### Step 2: Config Extraction
-Read root `build.gradle.kts` and `libs.versions.toml` to extract:
-- `compileSdk`, `targetSdk`, `minSdk`
-- AGP version, Kotlin version, Compose BOM version
-- Key dependency versions (Hilt, Navigation, Lifecycle, etc.)
+### Step 2: Extract Static Evidence
 
-### Step 3: Type Detection
-Apply classification rules from the table above. Store as `APP_TYPE`.
+Run:
 
-### Step 4: Parallel Agent Dispatch
-Dispatch all 9 agents in parallel using the Agent tool. Each agent receives:
-- Project root path
-- `APP_TYPE` classification
-- Extracted config (SDK versions, dependencies)
-- Specific file patterns to analyze
-
-```
-Agent: android-architecture  → Architecture score + findings
-Agent: android-performance   → Performance score + findings
-Agent: android-security      → Security score + findings
-Agent: android-compat        → Compatibility score + findings
-Agent: android-design        → Design score + findings
-Agent: android-accessibility → Accessibility score + findings
-Agent: android-testing       → Testing score + findings
-Agent: android-build         → Build system score + findings
-Agent: android-playstore     → Play Store score + findings
+```bash
+python skills/android/scripts/analyze_gradle.py [path] --json
+python skills/android/scripts/analyze_manifest.py [path] --json
+python skills/android/scripts/analyze_compose.py [path] --json
+python skills/android/scripts/analyze_dependencies.py [path] --json
+python skills/android/scripts/check_r8_config.py [path] --json
 ```
 
-For single-category commands (e.g., `/android security`), dispatch only the relevant agent.
+### Step 3: Build Shared Audit Context
 
-### Step 5: Score Aggregation
+Run:
 
-Collect scores from all agents and compute weighted overall score.
+```bash
+python skills/android/scripts/build_audit_context.py [path] --output generated/audit-context.json
+```
 
-| Category | Weight | Agent |
-|----------|--------|-------|
-| Architecture | 15% | android-architecture |
-| Performance | 15% | android-performance |
-| Security | 15% | android-security |
-| Compatibility | 10% | android-compat |
-| Design | 10% | android-design |
-| Accessibility | 10% | android-accessibility |
-| Testing | 10% | android-testing |
-| Build System | 10% | android-build |
-| Play Store | 5% | android-playstore |
+Agents receive `generated/audit-context.json` as their primary input.
 
-**Overall Score** = Σ (category_score × weight)
+### Step 4: Parallel Agent Interpretation
 
-Score interpretation:
-- **90-100**: Production-ready, best practices followed
-- **70-89**: Good shape, minor improvements needed
-- **50-69**: Significant gaps, prioritize high-weight categories
-- **Below 50**: Major issues, consider architectural remediation
+Dispatch relevant agents with:
 
-### Step 6: Report Generation
+- project root
+- `generated/audit-context.json`
+- selected category
 
-Generate two files:
+Agents must:
 
-**ANDROID-AUDIT-REPORT.md** — Full assessment with:
-- Executive summary (overall score, app type, key metrics)
-- Per-category breakdown (score, findings, severity)
-- Dependency version table
-- Architecture diagram (text-based)
+- prefer evidence already present in `audit-context.json`
+- cite evidence keys and file paths
+- mark runtime-only or policy-only claims as lower confidence
+- avoid claiming deterministic findings from missing artifacts
 
-**ANDROID-ACTION-PLAN.md** — Prioritized remediation with:
-- Critical issues (must fix before release)
-- High priority (fix within next sprint)
-- Medium priority (plan for next quarter)
-- Low priority (nice to have)
-- Estimated effort per item (S/M/L/XL)
+### Step 5: Deterministic Gate Evaluation
 
-## Quality Gates
+Apply the canonical gates and caps with:
 
-### Critical (blocks release)
-- `targetSdk` < 35 (Play Store requirement Aug 2025)
-- Cleartext traffic allowed without exception
-- Exported components without permissions
-- Hardcoded secrets in source
-- `minSdk` < 24 without compelling reason
-- Missing `foregroundServiceType` on Android 14+ services
+```bash
+python skills/android/scripts/score.py generated/audit-context.json
+```
 
-### High (fix before next release)
-- No Baseline Profiles
-- No R8/ProGuard configuration
-- KAPT still used where KSP is available
-- No test coverage at all
-- Deprecated `onBackPressed` without migration
-- `SharedPreferences` for sensitive data
-- Hardcoded colors instead of Material color roles
+If category scores are available from agents, pass them into `score.py`. Otherwise, emit:
 
-## Error Handling
+- triggered gates
+- unresolved external-evidence gates
+- applied score caps
+- confidence
+- formula trace status
 
-| Error | Resolution |
-|-------|-----------|
-| No Android project found at path | Report: "No Android project detected. Expected build.gradle.kts and AndroidManifest.xml." |
-| Gradle files unparseable | Fall back to regex-based extraction, flag reduced accuracy |
-| Agent timeout | Report partial results, mark timed-out category as "incomplete" |
-| Mixed build systems (Gradle + other) | Analyze Gradle portions only, note in report |
-| Empty source directories | Score as 0 for relevant categories, flag as "no source to analyze" |
+Do not emit a final 0-100 score when category evidence is missing.
 
-## Cross-References
+## Output Files
 
-- For detailed Material 3 Expressive token guidance: `/material-3-expressive`
-- For comprehensive Android design patterns: `/android-design-guidelines`
-- For ASO and store listing optimization: `/aso audit`
+Preferred outputs:
 
-## Available Tools
+- `generated/audit-context.json`
+- `ANDROID-AUDIT-REPORT.md`
+- `ANDROID-ACTION-PLAN.md`
 
-| Tool | Usage |
-|------|-------|
-| `Read` | Read build files, source code, manifests, configs |
-| `Bash` | Run Gradle tasks, count files, check versions |
-| `Write` | Generate report and action plan files |
-| `Glob` | Find project files by pattern |
-| `Grep` | Search source code for patterns, anti-patterns, API usage |
-| `Agent` | Dispatch specialist agents for parallel analysis |
+The report must distinguish:
 
-## Reference Files (loaded on-demand by agents)
+- `Verified static findings`
+- `Preflight warnings`
+- `External evidence required`
 
-- `references/android-16-changes.md` — Android 16 behavioral changes and migration guide
-- `references/owasp-mobile-2024.md` — OWASP Mobile Top 10 (2024) checklist
-- `references/play-store-policies.md` — Current Play Store policy requirements
-- `references/compose-performance.md` — Compose recomposition optimization guide
-- `references/material-3-tokens.md` — M3 token reference and mapping
+## Trust Boundaries
+
+These categories are currently static preflight unless richer artifacts are provided:
+
+- Performance: runtime metrics, macrobenchmarks, vitals, traces
+- Design system: screenshots, previews, design specs
+- Accessibility: runtime semantics, screenshots, assistive-tech testing
+- Play preflight: Play Console forms, policy declarations, listing assets
+
+## Freshness
+
+Time-sensitive platform and policy facts live in `rules/facts.json` with:
+
+- `last_verified`
+- `source_url`
+- `applies_from`
+- `confidence`
+
+Do not hardcode moving platform deadlines only in prose.
+
+## Reference Files
+
+- `references/android-16-changes.md`
+- `references/owasp-mobile-2024.md`
+- `references/play-store-policies.md`
+- `references/compose-best-practices.md`
+- `references/material-design-3.md`
+- `references/quality-gates.md`
+- `references/scoring-weights.md`
