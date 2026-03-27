@@ -1,185 +1,213 @@
 #!/usr/bin/env python3
 """Parse Android build configuration from Gradle files."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
 import sys
 from pathlib import Path
 
-try:
-    import tomli
-except ImportError:
-    try:
-        import tomllib as tomli
-    except ImportError:
-        tomli = None
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from common import (  # noqa: E402
+    discover_modules,
+    iter_gradle_build_files,
+    parse_version_catalog,
+    read_text,
+    relpath,
+)
 
 
-def parse_version_catalog(root: Path) -> dict:
-    catalog_path = root / "gradle" / "libs.versions.toml"
-    if not catalog_path.exists() or tomli is None:
-        return {}
-    try:
-        with open(catalog_path, "rb") as f:
-            return tomli.load(f)
-    except Exception:
-        return {}
+def match_int(text: str, pattern: str) -> int | None:
+    match = re.search(pattern, text)
+    return int(match.group(1)) if match else None
 
 
-def extract_sdk_values(root: Path) -> dict:
-    result = {"compile_sdk": None, "target_sdk": None, "min_sdk": None, "minify_enabled": None, "shrink_resources": None}
-    for gradle_name in ("build.gradle.kts", "build.gradle"):
-        for build_file in root.rglob(gradle_name):
-            if ".gradle" in build_file.parts or "build" in build_file.parts:
-                continue
-            try:
-                text = build_file.read_text(errors="ignore")
-            except OSError:
-                continue
-            for key, pattern in [
-                ("compile_sdk", r"compileSdk\s*=?\s*(\d+)"),
-                ("target_sdk", r"targetSdk\s*=?\s*(\d+)"),
-                ("min_sdk", r"minSdk\s*=?\s*(\d+)"),
-            ]:
-                if result[key] is None:
-                    m = re.search(pattern, text)
-                    if m:
-                        result[key] = int(m.group(1))
-            if result["minify_enabled"] is None:
-                m = re.search(r"minifyEnabled\s*=?\s*(true|false)", text, re.IGNORECASE)
-                if m:
-                    result["minify_enabled"] = m.group(1).lower() == "true"
-            if result["shrink_resources"] is None:
-                m = re.search(r"shrinkResources\s*=?\s*(true|false)", text, re.IGNORECASE)
-                if m:
-                    result["shrink_resources"] = m.group(1).lower() == "true"
-    return result
+def match_bool(text: str, pattern: str) -> bool | None:
+    match = re.search(pattern, text, re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1).lower() == "true"
 
 
-def detect_plugins(root: Path) -> dict:
-    plugins = set()
-    uses_kapt = False
-    uses_ksp = False
-    compose_enabled = False
+def extract_release_block(text: str) -> str:
+    match = re.search(r"buildTypes\s*\{.*?release\s*\{(.*?)\n\s*}", text, re.DOTALL)
+    return match.group(1) if match else ""
 
-    for gradle_name in ("build.gradle.kts", "build.gradle"):
-        for build_file in root.rglob(gradle_name):
-            if ".gradle" in build_file.parts or "build" in build_file.parts:
-                continue
-            try:
-                text = build_file.read_text(errors="ignore")
-            except OSError:
-                continue
-            for m in re.findall(r'id\s*\(\s*["\']([^"\']+)["\']\s*\)', text):
-                plugins.add(m)
-            for m in re.findall(r'alias\s*\(\s*libs\.plugins\.([^)]+)\s*\)', text):
-                plugins.add(m.replace(".", "-"))
-            if re.search(r'kotlin-kapt|kotlin\("kapt"\)', text):
-                uses_kapt = True
-            if re.search(r'com\.google\.devtools\.ksp|devtools\.ksp', text):
-                uses_ksp = True
-            if re.search(r'compose\s*=\s*true|buildFeatures\s*\{[^}]*compose\s*=\s*true', text, re.DOTALL):
-                compose_enabled = True
-            if "composeOptions" in text or "compose" in text.lower():
-                compose_enabled = True
 
-    detected = []
-    plugin_keywords = {
-        "kotlin-android": "kotlin-android",
-        "ksp": "ksp",
-        "hilt": "hilt",
-        "room": "room",
-        "compose": "compose",
-        "kapt": "kapt",
-        "serialization": "kotlin-serialization",
-    }
-    for keyword, name in plugin_keywords.items():
-        if any(keyword in p for p in plugins):
-            detected.append(name)
-    return {"plugins": sorted(set(detected)), "uses_kapt": uses_kapt, "uses_ksp": uses_ksp, "compose_enabled": compose_enabled}
+def extract_plugins(text: str) -> list[str]:
+    plugins = set(re.findall(r'id\s*\(\s*["\']([^"\']+)["\']\s*\)', text))
+    plugins.update(re.findall(r'kotlin\s*\(\s*["\']([^"\']+)["\']\s*\)', text))
+    return sorted(plugins)
+
+
+def module_details(root: Path) -> list[dict]:
+    details = []
+    for module in discover_modules(root):
+        build_file = root / module["build_file"] if module.get("build_file") else None
+        text = read_text(build_file) if build_file else ""
+        release_block = extract_release_block(text)
+
+        compose_enabled = bool(
+            re.search(r"buildFeatures\s*\{[^}]*compose\s*=\s*true", text, re.DOTALL)
+            or "androidx.compose" in text
+            or "composecompiler" in text.lower()
+        )
+
+        details.append(
+            {
+                "name": module["name"],
+                "kind": module["kind"],
+                "build_file": module["build_file"],
+                "plugins": extract_plugins(text),
+                "compile_sdk": match_int(text, r"compileSdk\s*=?\s*(\d+)"),
+                "target_sdk": match_int(text, r"targetSdk\s*=?\s*(\d+)"),
+                "min_sdk": match_int(text, r"minSdk\s*=?\s*(\d+)"),
+                "compose_enabled": compose_enabled,
+                "uses_kapt": bool(re.search(r'kotlin-kapt|kotlin\("kapt"\)|\bkapt\s*\(', text)),
+                "uses_ksp": bool(re.search(r"com\.google\.devtools\.ksp|devtools\.ksp|\bksp\s*\(", text)),
+                "release": {
+                    "minify_enabled": match_bool(release_block, r"minifyEnabled\s*=?\s*(true|false)"),
+                    "shrink_resources": match_bool(release_block, r"shrinkResources\s*=?\s*(true|false)"),
+                },
+            }
+        )
+
+    return details
+
+
+def first_non_null(modules: list[dict], key: str, preferred_kinds: tuple[str, ...]) -> int | None:
+    for preferred_kind in preferred_kinds:
+        for module in modules:
+            if module["kind"] == preferred_kind and module.get(key) is not None:
+                return module[key]
+    for module in modules:
+        if module.get(key) is not None:
+            return module[key]
+    return None
 
 
 def get_gradle_version(root: Path) -> str | None:
     props = root / "gradle" / "wrapper" / "gradle-wrapper.properties"
-    if not props.exists():
-        return None
-    try:
-        text = props.read_text(errors="ignore")
-        m = re.search(r"gradle-(\d+\.\d+(?:\.\d+)?)", text)
-        return m.group(1) if m else None
-    except OSError:
-        return None
+    text = read_text(props)
+    match = re.search(r"gradle-(\d+\.\d+(?:\.\d+)?)", text)
+    return match.group(1) if match else None
+
+
+def resolve_version_ref(versions: dict, value) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        ref = value.get("ref")
+        if ref:
+            return versions.get(ref)
+        return value.get("version")
+    return None
 
 
 def get_agp_version(catalog: dict, root: Path) -> str | None:
     versions = catalog.get("versions", {})
     for key in ("agp", "androidGradlePlugin", "android-gradle-plugin"):
         if key in versions:
-            v = versions[key]
-            return v if isinstance(v, str) else v.get("version", str(v))
+            return resolve_version_ref(versions, versions[key])
 
-    for name in ("build.gradle.kts", "build.gradle"):
-        build_file = root / name
-        if build_file.exists():
-            try:
-                text = build_file.read_text(errors="ignore")
-                m = re.search(r'com\.android\.tools\.build:gradle:(\S+)', text)
-                if m:
-                    return m.group(1).strip("\"'")
-                m = re.search(r'com\.android\.\w+["\s]+version\s+["\'](\S+)', text)
-                if m:
-                    return m.group(1)
-            except OSError:
-                continue
+    for build_file in iter_gradle_build_files(root):
+        text = read_text(build_file)
+        match = re.search(r'com\.android\.tools\.build:gradle:(\S+)', text)
+        if match:
+            return match.group(1).strip("\"'")
+    return None
+
+
+def get_kotlin_version(catalog: dict, root: Path) -> str | None:
+    versions = catalog.get("versions", {})
+    for key in ("kotlin", "kotlinVersion"):
+        if key in versions:
+            return resolve_version_ref(versions, versions[key])
+
+    for build_file in iter_gradle_build_files(root):
+        text = read_text(build_file)
+        match = re.search(r'org\.jetbrains\.kotlin[^"\']*["\']\s*version\s*["\']([^"\']+)', text)
+        if match:
+            return match.group(1)
     return None
 
 
 def get_compose_bom_version(catalog: dict) -> str | None:
+    versions = catalog.get("versions", {})
     libs = catalog.get("libraries", {})
-    for key, val in libs.items():
-        if "compose-bom" in key or "composeBom" in key:
-            if isinstance(val, dict):
-                module = val.get("module", "") or val.get("group", "")
-                if "compose-bom" in module or "compose.bom" in module:
-                    version = val.get("version", {})
-                    if isinstance(version, dict):
-                        ref = version.get("ref", "")
-                        versions = catalog.get("versions", {})
-                        return versions.get(ref, ref) if ref else None
-                    return str(version) if version else None
-            elif isinstance(val, str) and "compose-bom" in val:
-                parts = val.split(":")
-                return parts[-1] if len(parts) >= 3 else None
+    for key, value in libs.items():
+        if "compose-bom" not in key and "composeBom" not in key:
+            continue
+        if isinstance(value, dict):
+            version = value.get("version")
+            resolved = resolve_version_ref(versions, version)
+            if resolved:
+                return resolved
+            module = value.get("module", "")
+            if "compose-bom" in module:
+                parts = module.split(":")
+                if len(parts) >= 3:
+                    return parts[-1]
+        elif isinstance(value, str) and "compose-bom" in value:
+            parts = value.split(":")
+            if len(parts) >= 3:
+                return parts[-1]
     return None
+
+
+def parse_gradle_properties(root: Path) -> dict:
+    props_path = root / "gradle.properties"
+    text = read_text(props_path)
+
+    values = {}
+    for key in (
+        "org.gradle.caching",
+        "org.gradle.parallel",
+        "org.gradle.configureondemand",
+        "org.gradle.configuration-cache",
+        "android.nonTransitiveRClass",
+        "android.enableR8.fullMode",
+    ):
+        match = re.search(rf"^{re.escape(key)}\s*=\s*(.+)$", text, re.MULTILINE)
+        if match:
+            values[key] = match.group(1).strip()
+    return values
 
 
 def analyze(root: Path) -> dict:
     catalog = parse_version_catalog(root)
-    sdk = extract_sdk_values(root)
-    plugin_info = detect_plugins(root)
-    gradle_version = get_gradle_version(root)
-    agp_version = get_agp_version(catalog, root)
-    compose_bom = get_compose_bom_version(catalog)
+    modules = module_details(root)
+    properties = parse_gradle_properties(root)
 
-    catalog_entries = 0
-    for section in ("versions", "libraries", "plugins", "bundles"):
-        catalog_entries += len(catalog.get(section, {}))
+    app_modules = [module for module in modules if module["kind"] == "application"]
+    library_modules = [module for module in modules if module["kind"] == "library"]
+    aggregate_modules = app_modules or library_modules or modules
 
     return {
-        "target_sdk": sdk["target_sdk"],
-        "compile_sdk": sdk["compile_sdk"],
-        "min_sdk": sdk["min_sdk"],
-        "agp_version": agp_version,
-        "gradle_version": gradle_version,
-        "plugins": plugin_info["plugins"],
-        "uses_kapt": plugin_info["uses_kapt"],
-        "uses_ksp": plugin_info["uses_ksp"],
-        "minify_enabled": sdk["minify_enabled"],
-        "shrink_resources": sdk["shrink_resources"],
-        "compose_enabled": plugin_info["compose_enabled"],
-        "compose_bom_version": compose_bom,
-        "version_catalog_entries": catalog_entries,
+        "compile_sdk": first_non_null(aggregate_modules, "compile_sdk", ("application", "library")),
+        "target_sdk": first_non_null(aggregate_modules, "target_sdk", ("application", "library")),
+        "min_sdk": first_non_null(aggregate_modules, "min_sdk", ("application", "library")),
+        "agp_version": get_agp_version(catalog, root),
+        "gradle_version": get_gradle_version(root),
+        "kotlin_version": get_kotlin_version(catalog, root),
+        "compose_bom_version": get_compose_bom_version(catalog),
+        "version_catalog_entries": sum(len(catalog.get(section, {})) for section in ("versions", "libraries", "plugins", "bundles")),
+        "application_modules": [module["name"] for module in app_modules],
+        "library_modules": [module["name"] for module in library_modules],
+        "compose_enabled": any(module["compose_enabled"] for module in aggregate_modules),
+        "uses_kapt": any(module["uses_kapt"] for module in modules),
+        "uses_ksp": any(module["uses_ksp"] for module in modules),
+        "module_builds": modules,
+        "gradle_properties": properties,
+        "limitations": [
+            "Gradle parsing is static and file-based.",
+            "Convention plugins and generated build logic are only partially visible without the Gradle model.",
+        ],
     }
 
 
@@ -199,8 +227,8 @@ def main():
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        for k, v in result.items():
-            print(f"{k}: {v}")
+        for key, value in result.items():
+            print(f"{key}: {value}")
 
 
 if __name__ == "__main__":
