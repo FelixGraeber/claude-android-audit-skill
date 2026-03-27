@@ -1,58 +1,42 @@
-# Quality Gates -- Hard Rules
+# Quality Gates -- Generated from rules/rules.json
 
-Agents must NEVER approve or pass a review if any Critical gate is violated. High gates should be flagged prominently. Medium gates are recommendations.
+This file is generated from the canonical registry at `skills/android/rules/rules.json`.
 
 ## Critical Severity
 
-These are blocking. Any violation fails the audit.
-
-| # | Rule | What to Check | Why Critical |
-|---|------|---------------|--------------|
-| C1 | Exported component without permission or intent-filter | `rg 'exported="true"' AndroidManifest.xml` then verify each has `<intent-filter>` or `android:permission` | Arbitrary app can launch your Activity/Service/Receiver, data theft or privilege escalation |
-| C2 | usesCleartextTraffic="true" without network security config | `rg 'usesCleartextTraffic' AndroidManifest.xml` and check `res/xml/network_security_config.xml` exists | All traffic unencrypted, MITM attacks, credential sniffing |
-| C3 | targetSdk below Play Store requirement (< 35) | Check `targetSdkVersion` in `build.gradle.kts` | App will be rejected from Play Store |
-| C4 | Hardcoded secrets in source | `rg -i '(api[_-]?key\|secret\|password\|token)\s*=\s*"[^"]+"' --type kotlin --type java` | Secrets extractable from APK, account compromise |
-| C5 | Crash rate >= 1.09% | Android Vitals dashboard or CI crash tracking | Play Store bad behavior threshold, visibility penalty |
-| C6 | ANR rate >= 0.47% | Android Vitals dashboard or CI ANR tracking | Play Store bad behavior threshold, visibility penalty |
-| C7 | minifyEnabled false in release | `rg 'minifyEnabled.*false' --glob '*.gradle*'` in release block | APK not obfuscated, trivially reverse-engineered, larger binary |
-| C8 | android:debuggable="true" in release | `rg 'debuggable' AndroidManifest.xml` and `rg 'debuggable.*true' --glob '*.gradle*'` | Attacker can attach debugger, inspect memory, bypass security |
+| ID | Category | Rule | External Evidence Required | Cap Behavior |
+|---|---|---|---|---|
+| C1 | security | Exported component without protective permission | No | cap_final_score_40 |
+| C2 | security | Cleartext traffic enabled without network security config | No | cap_final_score_40 |
+| C3 | play_preflight | Target SDK below current Play submission requirement | No | cap_final_score_40 |
+| C4 | security | Hardcoded secrets in source | No | cap_final_score_40 |
+| C5 | performance | Crash rate above Android Vitals bad behavior threshold | Yes | cap_final_score_40 |
+| C6 | performance | ANR rate above Android Vitals bad behavior threshold | Yes | cap_final_score_40 |
+| C7 | build_system | Application release build lacks shrink/obfuscation | No | cap_final_score_40 |
+| C8 | security | Manifest debuggable enabled | No | cap_final_score_40 |
 
 ## High Severity
 
-These are strong warnings. Should be fixed before release.
+| ID | Category | Rule | External Evidence Required | Cap Behavior |
+|---|---|---|---|---|
+| H1 | build_system | KAPT still in use where KSP is likely available | No | counts_toward_high_cap |
+| H2 | performance | No benchmark or baseline profile module detected | No | counts_toward_high_cap |
+| H3 | accessibility | Low-confidence touch target risk | No | counts_toward_high_cap |
+| H4 | security | Deprecated security-crypto dependency still present | No | counts_toward_high_cap |
+| H5 | compatibility | No edge-to-edge implementation evidence | No | counts_toward_high_cap |
+| H6 | security | No network security config | No | counts_toward_high_cap |
+| H7 | security | WebView SSL errors potentially ignored | No | counts_toward_high_cap |
+| H8 | compatibility | Legacy onBackPressed override without Android 16 migration | No | counts_toward_high_cap |
 
-| # | Rule | What to Check | Impact |
-|---|------|---------------|--------|
-| H1 | KAPT when KSP alternative exists | `rg 'kapt' --glob '*.gradle*'` for Dagger/Hilt/Room/Moshi | 2-4x slower builds, blocks K2 compiler migration |
-| H2 | No Baseline Profile | Check for `baseline-prof.txt` or `baselineprofile` module | 30-50% slower cold start without precompiled critical paths |
-| H3 | Touch targets < 48dp | Audit all clickable Composables and XML buttons for sizing | Accessibility failure, unusable for motor-impaired users |
-| H4 | EncryptedSharedPreferences usage | `rg 'EncryptedSharedPreferences' --type kotlin` | Deprecated; use DataStore with Tink encryption or Keystore directly |
-| H5 | No edge-to-edge implementation | `rg 'enableEdgeToEdge\|WindowCompat.setDecorFitsSystemWindows' --type kotlin` | Mandatory on API 36, content clipped behind system bars |
-| H6 | No network_security_config.xml | Check `res/xml/network_security_config.xml` exists | No certificate pinning, no cleartext control, weaker transport security |
-| H7 | SSL errors ignored in WebView | `rg 'onReceivedSslError' --type kotlin` then check for `proceed()` | MITM attacks on WebView content, credential theft |
-| H8 | onBackPressed() override without OnBackInvokedCallback | `rg 'onBackPressed' --type kotlin` without corresponding `OnBackInvokedCallback` | Broken back navigation on API 36, predictive back animation broken |
+## Score Caps
 
-## Medium Severity
+| ID | When | Max Score |
+|---|---|---|
+| critical-cap | any_critical_gate_triggered | 40 |
+| high-cap | high_gate_count >= 3 | 60 |
 
-Recommendations for improved quality.
+## Notes
 
-| # | Rule | What to Check | Impact |
-|---|------|---------------|--------|
-| M1 | No version catalog (libs.versions.toml) | Check `gradle/libs.versions.toml` exists | Inconsistent dependency versions across modules, harder maintenance |
-| M2 | No convention plugins | Check `build-logic/` or `buildSrc/` for shared build config | Duplicated build configuration, drift between modules |
-| M3 | Missing StrictMode in debug | `rg 'StrictMode' --type kotlin` | Disk/network on main thread issues go undetected during development |
-| M4 | No LeakCanary in debug deps | `rg 'leakcanary' --glob '*.gradle*' --glob '*.toml'` | Memory leaks go undetected, OOM crashes in production |
-| M5 | collectAsState instead of collectAsStateWithLifecycle | `rg 'collectAsState[^W]' --type kotlin` (matches collectAsState but not collectAsStateWithLifecycle) | Flow collection continues when app backgrounded, wasted resources, potential crashes |
-| M6 | No screenshot tests | Check for Roborazzi, Paparazzi, or Compose Preview Screenshot Testing setup | Visual regressions go undetected, manual QA burden |
-
-## Gate Enforcement
-
-### During Code Review
-- **Critical:** Block merge. Must fix before approval.
-- **High:** Request changes. Can merge with tech debt ticket if justified.
-- **Medium:** Comment. Merge allowed, track for improvement.
-
-### During Audit
-- **Critical violations:** Score capped at 40/100 regardless of other scores.
-- **3+ High violations:** Score capped at 60/100.
-- **Any Critical violation in security category:** Security score = 0.
+- Final scores require category scores plus gate evaluation.
+- External-evidence gates stay unresolved until telemetry or store artifacts are provided.
+- Preflight categories should report lower confidence when runtime or visual artifacts are missing.

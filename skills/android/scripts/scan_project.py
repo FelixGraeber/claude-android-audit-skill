@@ -1,98 +1,85 @@
 #!/usr/bin/env python3
 """Discover Android project structure."""
 
+from __future__ import annotations
+
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
-def find_files(root: Path, name: str) -> list[str]:
-    return [str(p.relative_to(root)) for p in root.rglob(name) if ".gradle" not in p.parts and "build" not in p.parts]
-
-
-def count_files(root: Path, suffix: str) -> int:
-    return sum(1 for _ in root.rglob(f"*{suffix}") if ".gradle" not in _.parts and "build" not in _.parts)
-
-
-def count_xml_layouts(root: Path) -> int:
-    count = 0
-    for p in root.rglob("*.xml"):
-        parts = p.parts
-        if any(part.startswith("layout") for part in parts) and "res" in parts:
-            if ".gradle" not in parts and "build" not in parts:
-                count += 1
-    return count
+from common import (  # noqa: E402
+    count_compose_files,
+    count_production_source_files,
+    count_xml_layouts,
+    discover_modules,
+    production_source_files,
+    relpath,
+)
 
 
-def count_compose_files(root: Path) -> int:
-    count = 0
-    for p in root.rglob("*.kt"):
-        if ".gradle" in p.parts or "build" in p.parts:
+def find_named_files(root: Path, name: str) -> list[str]:
+    files = []
+    for path in root.rglob(name):
+        if "build" in path.parts or ".gradle" in path.parts:
             continue
-        try:
-            text = p.read_text(errors="ignore")
-            if "@Composable" in text:
-                count += 1
-        except OSError:
-            continue
-    return count
-
-
-def parse_modules(root: Path) -> list[str]:
-    modules = []
-    for name in ("settings.gradle.kts", "settings.gradle"):
-        settings = root / name
-        if settings.exists():
-            try:
-                text = settings.read_text(errors="ignore")
-                for m in re.findall(r'include\s*\(\s*"([^"]+)"\s*\)', text):
-                    modules.append(m.lstrip(":").replace(":", "/"))
-                for m in re.findall(r"include\s*\(\s*'([^']+)'\s*\)", text):
-                    modules.append(m.lstrip(":").replace(":", "/"))
-                for m in re.findall(r'include\s+"([^"]+)"', text):
-                    modules.append(m.lstrip(":").replace(":", "/"))
-                for m in re.findall(r"include\s+'([^']+)'", text):
-                    modules.append(m.lstrip(":").replace(":", "/"))
-            except OSError:
-                continue
-            break
-    return sorted(set(modules))
+        files.append(relpath(root, path))
+    return sorted(files)
 
 
 def scan(root: Path) -> dict:
-    build_files = find_files(root, "build.gradle.kts") + find_files(root, "build.gradle")
-    manifests = find_files(root, "AndroidManifest.xml")
-    modules = parse_modules(root)
-
-    kt_count = count_files(root, ".kt")
-    java_count = count_files(root, ".java")
-    xml_layouts = count_xml_layouts(root)
-    compose_files = count_compose_files(root)
-
-    has_version_catalog = (root / "gradle" / "libs.versions.toml").exists()
-    has_convention_plugins = (root / "build-logic").exists()
-    has_buildsrc = (root / "buildSrc").exists()
-    has_benchmark = any(
-        "benchmark" in m.lower() or "macrobenchmark" in m.lower()
-        for m in modules
+    modules = discover_modules(root)
+    build_files = sorted(
+        {
+            module["build_file"]
+            for module in modules
+            if module.get("build_file")
+        }
     )
+    manifests = find_named_files(root, "AndroidManifest.xml")
+
+    kt_files = production_source_files(root, (".kt",))
+    java_files = production_source_files(root, (".java",))
+
+    app_modules = [module["name"] for module in modules if module["kind"] == "application"]
+    library_modules = [module["name"] for module in modules if module["kind"] == "library"]
+    benchmark_modules = [
+        module["name"]
+        for module in modules
+        if "benchmark" in module["name"].lower() or "macrobenchmark" in module["name"].lower()
+    ]
 
     return {
-        "modules": modules,
-        "build_files": sorted(build_files),
-        "manifests": sorted(manifests),
+        "modules": [module["name"] for module in modules],
+        "module_details": modules,
+        "build_files": build_files,
+        "manifests": manifests,
         "source_counts": {
-            "kt": kt_count,
-            "java": java_count,
-            "xml_layouts": xml_layouts,
-            "compose_files": compose_files,
+            "kt": len(kt_files),
+            "java": len(java_files),
+            "xml_layouts": count_xml_layouts(root),
+            "compose_files": count_compose_files(root),
         },
-        "has_version_catalog": has_version_catalog,
-        "has_convention_plugins": has_convention_plugins,
-        "has_buildSrc": has_buildsrc,
-        "has_benchmark_module": has_benchmark,
+        "module_counts": {
+            "application": len(app_modules),
+            "library": len(library_modules),
+            "benchmark": len(benchmark_modules),
+            "total": len(modules),
+        },
+        "application_modules": app_modules,
+        "library_modules": library_modules,
+        "has_version_catalog": (root / "gradle" / "libs.versions.toml").exists(),
+        "has_convention_plugins": (root / "build-logic").exists(),
+        "has_buildSrc": (root / "buildSrc").exists(),
+        "has_benchmark_module": bool(benchmark_modules),
+        "limitations": [
+            "Structure scan uses source-set and build file heuristics.",
+            "Merged manifest, Gradle model, and runtime artifacts are not available in this phase.",
+        ],
     }
 
 
@@ -112,8 +99,8 @@ def main():
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        for k, v in result.items():
-            print(f"{k}: {v}")
+        for key, value in result.items():
+            print(f"{key}: {value}")
 
 
 if __name__ == "__main__":

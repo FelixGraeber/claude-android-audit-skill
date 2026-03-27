@@ -1,57 +1,32 @@
 ---
 name: android-design
 description: >
-  UI/UX and Material Design review for Android projects. Evaluates Material
-  Design 3, Material 3 Expressive, dynamic color, window size classes,
-  edge-to-edge insets, typography, and component selection. Triggers on:
-  "design review", "material design", "dynamic color", "UI review".
+  Design system implementation audit for Android projects. Evaluates Material 3
+  adoption, theme structure, dynamic color, adaptive layout hooks, and token usage
+  from source evidence. Triggers on: "design review", "material design",
+  "dynamic color", "UI review".
 user-invokable: true
 argument-hint: "[path]"
 ---
 
-# Android Design Review
+# Android Design System Implementation Audit
 
-Evaluate Material Design compliance and UI/UX patterns.
+## Static-Only Scope
 
-## What This Checks
+This skill can score only what source evidence can support:
 
-1. **M3 Adoption** — Material3 library dependency, `MaterialTheme` usage, M3 components (not M2/AppCompat)
-2. **Dynamic Color** — `dynamicDarkColorScheme`/`dynamicLightColorScheme` with fallback, no hardcoded hex colors for theme roles
-3. **Window Size Classes** — `calculateWindowSizeClass()`, adaptive layouts per Compact/Medium/Expanded
-4. **Edge-to-Edge** — `Scaffold` with `innerPadding`, `systemBarsPadding()`, `safeDrawing` insets
-5. **Typography** — `sp` units for text (not `dp`), `MaterialTheme.typography` roles, dynamic type support
-6. **Component Selection** — Correct component for use case (FAB for primary action only, NavigationBar for 3-5 destinations, NavigationRail for medium screens)
-7. **M3 Expressive** — Intensity levels, max 1-2 hero moments per flow, shape contrast, standard nav preserved
+1. Material 2 vs Material 3 dependencies and component imports
+2. Theme structure and color role usage
+3. Dynamic color with fallback
+4. Window size class and adaptive-layout hooks
+5. Typography token usage
 
-## How to Run
+## Out of Scope Without Visual Artifacts
 
-```
-/android design [path]
-```
+- visual hierarchy
+- spacing rhythm
+- motion quality
+- perceived polish
+- contrast validation from real rendered colors
 
-## Scoring
-
-| Factor | Weight |
-|--------|--------|
-| M3 adoption | 20% |
-| Dynamic color | 15% |
-| Window size classes | 15% |
-| Edge-to-edge | 15% |
-| Typography | 15% |
-| Component selection | 10% |
-| M3 Expressive | 10% |
-
-## Cross-References
-
-- For detailed M3 Expressive token guidance: `/material-3-expressive`
-- For comprehensive Android design patterns: `/android-design-guidelines`
-
-## Key Anti-Patterns
-
-| Anti-Pattern | Correct Approach |
-|-------------|-----------------|
-| Hardcoded color hex values | Use `MaterialTheme.colorScheme` roles |
-| `dp` for text size | Use `sp` units |
-| Multiple FABs per screen | One FAB for primary action only |
-| Fixed navigation for all screens | Adapt per window size class |
-| Removing text labels for "cleaner" look | Keep labels for usability |
+Treat Material 3 Expressive as optional or app-type-specific, not a universal penalty.

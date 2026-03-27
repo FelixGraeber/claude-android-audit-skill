@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Static analysis of Jetpack Compose patterns: stability, recomposition, accessibility, testing."""
+"""Static analysis of Jetpack Compose patterns."""
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -7,78 +9,110 @@ import re
 import sys
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
-def find_kt_files(root: Path) -> list[Path]:
-    files = []
-    for p in root.rglob("*.kt"):
-        if ".gradle" not in p.parts and "build" not in p.parts:
-            files.append(p)
-    return files
+from common import production_source_files, relpath  # noqa: E402
+
+
+CALL_BLOCK_RE = re.compile(r"\b(Icon|Image|AsyncImage)\s*\((.*?)\)", re.DOTALL)
+
+
+def line_number(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
 
 
 def count_pattern(text: str, pattern: str) -> int:
     return len(re.findall(pattern, text))
 
 
-def analyze_file(text: str, stats: dict):
+def append_issue(issues: list[dict], root: Path, file_path: Path, rule_id: str, line: int, message: str, confidence: float):
+    issues.append(
+        {
+            "rule_id": rule_id,
+            "file": relpath(root, file_path),
+            "line": line,
+            "message": message,
+            "confidence": confidence,
+        }
+    )
+
+
+def analyze_file(root: Path, file_path: Path, text: str, stats: dict):
     stats["composable_count"] += count_pattern(text, r"@Composable")
     stats["stable_annotations"] += count_pattern(text, r"@Stable\b")
     stats["immutable_annotations"] += count_pattern(text, r"@Immutable\b")
-
     stats["data_classes_with_collections"] += count_pattern(
         text, r"data\s+class\s+\w+[^)]*\b(?:List|Map|Set|MutableList|MutableMap|MutableSet)\b"
     )
-
     stats["derived_state_of"] += count_pattern(text, r"derivedStateOf\s*\{")
     stats["remember_usage"] += count_pattern(text, r"\bremember(?:Saveable)?\s*[\({]")
-
     stats["collect_as_state_with_lifecycle"] += count_pattern(text, r"collectAsStateWithLifecycle\s*\(")
     stats["collect_as_state_without_lifecycle"] += count_pattern(text, r"collectAsState\s*\(")
+    stats["semantics_blocks"] += count_pattern(text, r"Modifier\s*\.\s*(?:semantics|clearAndSetSemantics)\s*[\({]")
+    stats["merge_descendants"] += count_pattern(text, r"mergeDescendants\s*=\s*true")
+    stats["heading_annotations"] += count_pattern(text, r"heading\s*\(\s*\)")
+    stats["pane_titles"] += count_pattern(text, r"paneTitle\s*=")
+    stats["live_regions"] += count_pattern(text, r"liveRegion\s*=")
+    stats["test_tags"] += count_pattern(text, r"testTag\s*\(")
 
-    lazy_items_blocks = re.findall(r"items\s*\([^)]*\)", text)
-    for block in lazy_items_blocks:
+    for block in re.findall(r"(?:items|itemsIndexed|item)\s*\((.*?)\)", text, re.DOTALL):
         if "key" in block:
             stats["lazy_keys_used"] += 1
         else:
             stats["lazy_keys_missing"] += 1
 
-    item_blocks = re.findall(r"(?:itemsIndexed|item)\s*\([^)]*\)", text)
-    for block in item_blocks:
-        if "key" in block:
-            stats["lazy_keys_used"] += 1
-
-    stats["semantics_blocks"] += count_pattern(text, r"Modifier\s*\.\s*semantics\s*[\({]")
-    stats["merge_descendants"] += count_pattern(text, r"mergeDescendants\s*=\s*true")
-    stats["heading_annotations"] += count_pattern(text, r"heading\s*\(\s*\)")
-
-    icon_calls = re.finditer(r"\bIcon\s*\(([^)]*)\)", text, re.DOTALL)
-    for m in icon_calls:
-        body = m.group(1)
-        if "contentDescription" in body and "null" not in body.split("contentDescription")[1].split(",")[0]:
-            stats["content_descriptions_present"] += 1
-        else:
+    for match in CALL_BLOCK_RE.finditer(text):
+        component = match.group(1)
+        body = match.group(2)
+        line = line_number(text, match.start())
+        if "contentDescription" not in body:
             stats["content_descriptions_missing"] += 1
+            append_issue(
+                stats["issues"],
+                root,
+                file_path,
+                "compose.missing_content_description",
+                line,
+                f"{component} is missing an explicit contentDescription. Decorative assets should use contentDescription = null.",
+                0.55,
+            )
+            continue
 
-    image_calls = re.finditer(r"\bImage\s*\(([^)]*)\)", text, re.DOTALL)
-    for m in image_calls:
-        body = m.group(1)
-        if "contentDescription" in body and "null" not in body.split("contentDescription")[1].split(",")[0]:
-            stats["content_descriptions_present"] += 1
+        description_arg = re.search(r"contentDescription\s*=\s*([^,\n]+)", body)
+        if description_arg and description_arg.group(1).strip() == "null":
+            stats["decorative_content_descriptions"] += 1
         else:
-            stats["content_descriptions_missing"] += 1
+            stats["content_descriptions_present"] += 1
 
-    clickable_calls = re.finditer(r"Modifier[^;{]*\.clickable\s*[\({][^}]*\}", text, re.DOTALL)
-    for m in clickable_calls:
-        block = m.group(0)
-        if not re.search(r"\.size\s*\(|\.defaultMinSize\s*\(|\.sizeIn\s*\(|\.heightIn\s*\(|\.widthIn\s*\(", block):
-            stats["small_touch_targets"] += 1
-
-    stats["test_tags"] += count_pattern(text, r"testTag\s*\(")
+    for matcher, rule_id, message in (
+        (r"\.clickable\s*\(", "compose.low_confidence_touch_target", "Clickable modifier without local size hint."),
+        (r"\.toggleable\s*\(", "compose.low_confidence_touch_target", "Toggleable modifier without local size hint."),
+        (r"\.selectable\s*\(", "compose.low_confidence_touch_target", "Selectable modifier without local size hint."),
+    ):
+        for match in re.finditer(matcher, text):
+            line = line_number(text, match.start())
+            window = text[max(0, match.start() - 180): min(len(text), match.end() + 180)]
+            if re.search(
+                r"minimumInteractiveComponentSize\s*\(|\.size(In)?\s*\(|\.defaultMinSize\s*\(|\.heightIn\s*\(|\.widthIn\s*\(",
+                window,
+            ):
+                continue
+            stats["small_touch_target_warnings"] += 1
+            append_issue(
+                stats["issues"],
+                root,
+                file_path,
+                rule_id,
+                line,
+                message,
+                0.3,
+            )
 
 
 def analyze(root: Path, mode: str) -> dict:
-    kt_files = find_kt_files(root)
-
+    files = production_source_files(root, (".kt",))
     stats = {
         "composable_count": 0,
         "stable_annotations": 0,
@@ -93,18 +127,18 @@ def analyze(root: Path, mode: str) -> dict:
         "semantics_blocks": 0,
         "content_descriptions_present": 0,
         "content_descriptions_missing": 0,
+        "decorative_content_descriptions": 0,
         "merge_descendants": 0,
         "heading_annotations": 0,
-        "small_touch_targets": 0,
+        "pane_titles": 0,
+        "live_regions": 0,
+        "small_touch_target_warnings": 0,
         "test_tags": 0,
+        "issues": [],
     }
 
-    for f in kt_files:
-        try:
-            text = f.read_text(errors="ignore")
-        except OSError:
-            continue
-        analyze_file(text, stats)
+    for file_path in files:
+        analyze_file(root, file_path, file_path.read_text(errors="ignore"), stats)
 
     result = {"composable_count": stats["composable_count"]}
 
@@ -114,8 +148,6 @@ def analyze(root: Path, mode: str) -> dict:
             "immutable_annotations": stats["immutable_annotations"],
             "data_classes_with_collections": stats["data_classes_with_collections"],
         }
-
-    if mode in ("stability", "all"):
         result["recomposition"] = {
             "derived_state_of": stats["derived_state_of"],
             "lazy_keys_used": stats["lazy_keys_used"],
@@ -129,14 +161,21 @@ def analyze(root: Path, mode: str) -> dict:
         result["accessibility"] = {
             "content_descriptions_present": stats["content_descriptions_present"],
             "content_descriptions_missing": stats["content_descriptions_missing"],
+            "decorative_content_descriptions": stats["decorative_content_descriptions"],
             "semantics_blocks": stats["semantics_blocks"],
             "merge_descendants": stats["merge_descendants"],
             "heading_annotations": stats["heading_annotations"],
-            "small_touch_targets": stats["small_touch_targets"],
+            "pane_titles": stats["pane_titles"],
+            "live_regions": stats["live_regions"],
+            "small_touch_target_warnings": stats["small_touch_target_warnings"],
+            "issues": stats["issues"],
+            "limitations": [
+                "Touch target and semantics checks are static heuristics with low confidence.",
+                "Contrast, focus order, and TalkBack behavior require screenshots or runtime semantics dumps.",
+            ],
         }
 
     result["testing"] = {"test_tags": stats["test_tags"]}
-
     return result
 
 

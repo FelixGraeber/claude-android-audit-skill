@@ -1,0 +1,47 @@
+{
+  "last_verified": "2026-03-27",
+  "facts": [
+    {
+      "id": "play.target_api.2025",
+      "summary": "New apps and updates must target API 35 by August 31, 2025.",
+      "applies_from": "2025-08-31",
+      "source_url": "https://support.google.com/googleplay/android-developer/answer/11926878",
+      "confidence": "high"
+    },
+    {
+      "id": "play.discoverability.2025",
+      "summary": "Existing apps below the current discoverability threshold can be hidden from new users on newer Android versions; by August 31, 2025 that threshold is API 34+.",
+      "applies_from": "2025-08-31",
+      "source_url": "https://support.google.com/googleplay/android-developer/answer/11917020",
+      "confidence": "medium"
+    },
+    {
+      "id": "android16.predictive_back.default",
+      "summary": "When targeting Android 16, predictive back is on by default and android:enableOnBackInvokedCallback acts as a temporary opt-out.",
+      "applies_from": "android_api_36",
+      "source_url": "https://developer.android.com/about/versions/16/behavior-changes-all#predictive-back",
+      "confidence": "high"
+    },
+    {
+      "id": "android16.large_screen.opt_out",
+      "summary": "Android 16 ignores orientation, resizability, and aspect ratio restrictions on sw >= 600dp displays by default, with a temporary opt-out through API 36 and removal planned in API 37.",
+      "applies_from": "android_api_36",
+      "source_url": "https://developer.android.com/about/versions/16/behavior-changes-all#adaptive-layouts",
+      "confidence": "high"
+    },
+    {
+      "id": "play.page_size.2025",
+      "summary": "Apps targeting Android 15+ on 64-bit devices must support 16 KB page sizes for new apps and updates starting November 1, 2025.",
+      "applies_from": "2025-11-01",
+      "source_url": "https://developer.android.com/guide/practices/page-sizes",
+      "confidence": "high"
+    },
+    {
+      "id": "androidx.security.deprecation",
+      "summary": "AndroidX security-crypto APIs are deprecated in Security 1.1.0.",
+      "applies_from": "2025-07-30",
+      "source_url": "https://developer.android.com/jetpack/androidx/releases/security",
+      "confidence": "high"
+    }
+  ]
+}

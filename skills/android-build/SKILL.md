@@ -1,9 +1,9 @@
 ---
 name: android-build
 description: >
-  Build system and dependencies review for Android projects. Analyzes Gradle
-  version catalogs, convention plugins, KSP vs KAPT, R class transitivity,
-  build performance, and dependency verification. Triggers on: "build system",
+  Build system and dependency hygiene review for Android projects. Focuses on
+  module-aware Gradle evidence, KAPT/KSP migration risk, release shrink config,
+  repository hygiene, and dependency verification. Triggers on: "build system",
   "gradle", "dependencies", "version catalog", "KAPT", "KSP".
 user-invokable: true
 argument-hint: "[path]"
@@ -11,51 +11,22 @@ argument-hint: "[path]"
 
 # Android Build System Review
 
-Evaluate build system health, dependency management, and build performance.
-
 ## What This Checks
 
-1. **Version Catalogs** — `gradle/libs.versions.toml` exists and is used (vs inline versions)
-2. **Convention Plugins** — `build-logic/` directory with shared build configuration
-3. **KSP over KAPT** — No `kotlin-kapt` plugin when KSP alternative exists (Hilt, Room, Moshi)
-4. **R Class Transitivity** — `android.nonTransitiveRClass=true` in `gradle.properties`
-5. **Build Performance** — `org.gradle.caching=true`, `org.gradle.parallel=true`, configuration cache, JVM args optimized
-6. **Dependency Verification** — `gradle/verification-metadata.xml` with SHA-256/PGP
-7. **Version Recency** — AGP, Gradle wrapper, Kotlin, Compose BOM versions up to date
+1. Version catalogs and inline-version sprawl
+2. Convention plugins or shared build logic
+3. KAPT usage and likely KSP migration candidates
+4. Application release shrink/obfuscation configuration
+5. Bad Gradle property overrides such as `android.enableR8.fullMode=false`
+6. Repository hygiene, dependency verification, SNAPSHOTs, and wildcard versions
 
-## How to Run
+## What This Does Not Check Reliably Yet
 
-```
-/android build [path]
-```
+- Full Gradle model resolution
+- Convention-plugin indirection
+- Version freshness without external lookup
 
-## Process
+## Guidance
 
-1. Run `scripts/analyze_gradle.py` for build config
-2. Run `scripts/analyze_dependencies.py` for dependency health
-3. Check `gradle.properties` for build performance flags
-4. Verify `gradle/verification-metadata.xml` existence
-5. Check for `build-logic/` convention plugins
-
-## Scoring
-
-| Factor | Weight |
-|--------|--------|
-| Version catalogs | 20% |
-| Convention plugins | 15% |
-| KSP over KAPT | 15% |
-| R class transitivity | 10% |
-| Build performance | 15% |
-| Dependency verification | 15% |
-| Version recency | 10% |
-
-## Key Flags in gradle.properties
-
-```properties
-org.gradle.caching=true
-org.gradle.parallel=true
-org.gradle.configureondemand=true
-android.nonTransitiveRClass=true
-android.enableR8.fullMode=true
-org.gradle.jvmargs=-Xmx6g -XX:+HeapDumpOnOutOfMemoryError -XX:+UseParallelGC
-```
+- Treat `org.gradle.daemon=true`, `android.nonTransitiveRClass=true`, and similar current defaults as neutral unless explicitly overridden badly.
+- Treat `KAPT` as maintenance-mode debt, not as a universal hard failure.
