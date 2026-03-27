@@ -208,7 +208,7 @@ rg "shrinkResources\s*(=\s*)?false" --glob "*.gradle*"
 **Audit Checklist:**
 - [ ] `minifyEnabled = true` for release build type
 - [ ] `shrinkResources = true` for release build type
-- [ ] R8 full mode enabled (`android.enableR8.fullMode=true`)
+- [ ] No bad R8-related overrides in `gradle.properties` (for example `android.enableR8.fullMode=false`)
 - [ ] `android:debuggable` not set (defaults to false for release)
 - [ ] ProGuard/R8 rules don't over-keep (e.g., `-dontshrink`, `-dontobfuscate`)
 - [ ] Root/emulator detection for sensitive apps (banking, payments)

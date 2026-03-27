@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://felixgraeber.com/claude-android-audit/audit_context.schema.json",
+  "title": "Android Audit Context",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "project_root",
+    "project_type",
+    "scan",
+    "gradle",
+    "manifest",
+    "compose",
+    "dependencies",
+    "r8",
+    "rules",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "project_root": {
+      "type": "string"
+    },
+    "project_type": {
+      "type": "object",
+      "required": [
+        "app_shape",
+        "ui_stack",
+        "repo_kind"
+      ],
+      "properties": {
+        "app_shape": {
+          "type": "string"
+        },
+        "ui_stack": {
+          "type": "string"
+        },
+        "repo_kind": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "scan": {
+      "type": "object"
+    },
+    "gradle": {
+      "type": "object"
+    },
+    "manifest": {
+      "type": "object"
+    },
+    "compose": {
+      "type": "object"
+    },
+    "dependencies": {
+      "type": "object"
+    },
+    "r8": {
+      "type": "object"
+    },
+    "rules": {
+      "type": "object",
+      "required": [
+        "path",
+        "version"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

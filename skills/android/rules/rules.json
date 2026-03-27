@@ -1,0 +1,257 @@
+{
+  "version": "0.6.0",
+  "canonical": true,
+  "description": "Canonical scoring and gate registry for the Android audit skill.",
+  "category_weights": [
+    {
+      "id": "architecture",
+      "label": "Architecture",
+      "weight": 15,
+      "audit_mode": "audit"
+    },
+    {
+      "id": "performance",
+      "label": "Performance",
+      "weight": 15,
+      "audit_mode": "audit"
+    },
+    {
+      "id": "security",
+      "label": "Security",
+      "weight": 15,
+      "audit_mode": "audit"
+    },
+    {
+      "id": "compatibility",
+      "label": "Compatibility",
+      "weight": 10,
+      "audit_mode": "audit"
+    },
+    {
+      "id": "design_system",
+      "label": "Design System Implementation",
+      "weight": 10,
+      "audit_mode": "preflight_until_visual_artifacts"
+    },
+    {
+      "id": "accessibility",
+      "label": "Accessibility",
+      "weight": 10,
+      "audit_mode": "preflight_until_runtime_artifacts"
+    },
+    {
+      "id": "testing",
+      "label": "Testing",
+      "weight": 10,
+      "audit_mode": "audit"
+    },
+    {
+      "id": "build_system",
+      "label": "Build System",
+      "weight": 10,
+      "audit_mode": "audit"
+    },
+    {
+      "id": "play_preflight",
+      "label": "Play Preflight",
+      "weight": 5,
+      "audit_mode": "preflight_until_console_artifacts"
+    }
+  ],
+  "score_policy": {
+    "overall_formula": "sum(category_score * weight / 100)",
+    "requires_category_scores": true,
+    "insufficient_evidence_behavior": "Do not emit a final 0-100 score when category evidence is missing; emit confidence and gate results instead.",
+    "caps": [
+      {
+        "id": "critical-cap",
+        "when": "any_critical_gate_triggered",
+        "max_score": 40
+      },
+      {
+        "id": "high-cap",
+        "when": "high_gate_count >= 3",
+        "max_score": 60
+      }
+    ]
+  },
+  "gates": [
+    {
+      "id": "C1",
+      "severity": "critical",
+      "title": "Exported component without protective permission",
+      "category": "security",
+      "requires_external_evidence": false,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "manifest.exported_components[].has_permission == false"
+      ]
+    },
+    {
+      "id": "C2",
+      "severity": "critical",
+      "title": "Cleartext traffic enabled without network security config",
+      "category": "security",
+      "requires_external_evidence": false,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "manifest.uses_cleartext == true",
+        "manifest.has_network_security_config == false"
+      ]
+    },
+    {
+      "id": "C3",
+      "severity": "critical",
+      "title": "Target SDK below current Play submission requirement",
+      "category": "play_preflight",
+      "requires_external_evidence": false,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "gradle.target_sdk < 35"
+      ]
+    },
+    {
+      "id": "C4",
+      "severity": "critical",
+      "title": "Hardcoded secrets in source",
+      "category": "security",
+      "requires_external_evidence": false,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "security.hardcoded_secrets_count > 0"
+      ]
+    },
+    {
+      "id": "C5",
+      "severity": "critical",
+      "title": "Crash rate above Android Vitals bad behavior threshold",
+      "category": "performance",
+      "requires_external_evidence": true,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "external.vitals.crash_rate >= 1.09"
+      ]
+    },
+    {
+      "id": "C6",
+      "severity": "critical",
+      "title": "ANR rate above Android Vitals bad behavior threshold",
+      "category": "performance",
+      "requires_external_evidence": true,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "external.vitals.anr_rate >= 0.47"
+      ]
+    },
+    {
+      "id": "C7",
+      "severity": "critical",
+      "title": "Application release build lacks shrink/obfuscation",
+      "category": "build_system",
+      "requires_external_evidence": false,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "r8.all_application_release_variants_protected == false"
+      ]
+    },
+    {
+      "id": "C8",
+      "severity": "critical",
+      "title": "Manifest debuggable enabled",
+      "category": "security",
+      "requires_external_evidence": false,
+      "cap_behavior": "cap_final_score_40",
+      "signals": [
+        "manifest.debuggable == true"
+      ]
+    },
+    {
+      "id": "H1",
+      "severity": "high",
+      "title": "KAPT still in use where KSP is likely available",
+      "category": "build_system",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "gradle.uses_kapt == true"
+      ]
+    },
+    {
+      "id": "H2",
+      "severity": "high",
+      "title": "No benchmark or baseline profile module detected",
+      "category": "performance",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "scan.has_benchmark_module == false"
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "high",
+      "title": "Low-confidence touch target risk",
+      "category": "accessibility",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "compose.accessibility.small_touch_target_warnings > 0"
+      ]
+    },
+    {
+      "id": "H4",
+      "severity": "high",
+      "title": "Deprecated security-crypto dependency still present",
+      "category": "security",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "dependencies.deprecated_deps[].name == security-crypto"
+      ]
+    },
+    {
+      "id": "H5",
+      "severity": "high",
+      "title": "No edge-to-edge implementation evidence",
+      "category": "compatibility",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "compat.edge_to_edge_signal == false"
+      ]
+    },
+    {
+      "id": "H6",
+      "severity": "high",
+      "title": "No network security config",
+      "category": "security",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "manifest.has_network_security_config == false"
+      ]
+    },
+    {
+      "id": "H7",
+      "severity": "high",
+      "title": "WebView SSL errors potentially ignored",
+      "category": "security",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "security.webview_ssl_proceed_count > 0"
+      ]
+    },
+    {
+      "id": "H8",
+      "severity": "high",
+      "title": "Legacy onBackPressed override without Android 16 migration",
+      "category": "compatibility",
+      "requires_external_evidence": false,
+      "cap_behavior": "counts_toward_high_cap",
+      "signals": [
+        "compat.uses_on_back_pressed == true"
+      ]
+    }
+  ]
+}
