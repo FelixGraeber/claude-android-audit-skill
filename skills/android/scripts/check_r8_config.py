@@ -116,7 +116,12 @@ def check_build_config(root: Path) -> dict:
         "uses_optimize_txt": uses_optimize_txt,
         "module_release_settings": module_release_settings,
         "protected_release_modules": protected_release_modules,
-        "all_application_release_variants_protected": bool(app_release_configs) and len(protected_release_modules) == len(app_release_configs),
+        "application_release_variants_evaluated": len(app_release_configs),
+        "all_application_release_variants_protected": (
+            len(protected_release_modules) == len(app_release_configs)
+            if app_release_configs
+            else None
+        ),
         "bad_gradle_properties": bad_gradle_properties,
     }
 
@@ -143,6 +148,7 @@ def analyze(root: Path) -> dict:
         "uses_optimize_txt": build_config["uses_optimize_txt"],
         "module_release_settings": build_config["module_release_settings"],
         "protected_release_modules": build_config["protected_release_modules"],
+        "application_release_variants_evaluated": build_config["application_release_variants_evaluated"],
         "all_application_release_variants_protected": build_config["all_application_release_variants_protected"],
         "bad_gradle_properties": build_config["bad_gradle_properties"],
         "limitations": [

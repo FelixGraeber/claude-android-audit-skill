@@ -96,11 +96,17 @@ def evaluate(context: dict, rules: dict, category_scores: dict | None) -> dict:
         result["message"] = "Category scores were not provided. Gate results are deterministic, but the final 0-100 score is withheld."
         return result
 
+    required_categories = [category["id"] for category in rules["category_weights"]]
+    missing_categories = [category_id for category_id in required_categories if category_id not in category_scores]
+    if missing_categories:
+        result["status"] = "insufficient_evidence_for_final_score"
+        result["message"] = "Category scores were incomplete. The final 0-100 score is withheld until every required category is present."
+        result["missing_categories"] = missing_categories
+        return result
+
     total = 0.0
     for category in rules["category_weights"]:
         category_id = category["id"]
-        if category_id not in category_scores:
-            continue
         weighted = category_scores[category_id] * category["weight"] / 100
         total += weighted
         result["formula_trace"].append(
