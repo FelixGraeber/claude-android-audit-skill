@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://felixgraeber.com/claude-android-audit/audit_context.schema.json",
+  "$id": "https://felixgraeber.com/claude-android-audit-skill/audit_context.schema.json",
   "title": "Android Audit Context",
   "type": "object",
   "required": [
