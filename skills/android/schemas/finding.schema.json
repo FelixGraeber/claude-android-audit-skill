@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://felixgraeber.com/claude-android-audit/finding.schema.json",
+  "$id": "https://felixgraeber.com/claude-android-audit-skill/finding.schema.json",
   "title": "Android Audit Finding",
   "type": "object",
   "required": [
