@@ -142,6 +142,15 @@ tests/                     Audit pipeline tests
 - Claude Code or another skill-compatible agent runtime
 - `uv` recommended for dependency installation
 
+## Local Checks
+
+Run the focused Python test suite before changing audit scripts:
+
+```bash
+python3 -m unittest tests/test_audit_pipeline.py
+python3 -m compileall -q skills/android/scripts tests
+```
+
 ## License
 
 MIT
