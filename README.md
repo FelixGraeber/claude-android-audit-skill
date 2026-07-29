@@ -14,6 +14,7 @@ Built for evidence-based Android reviews: one shared audit context, category-spe
 - **Project-aware**: supports Kotlin, Java, Compose, XML/View apps, multi-module repos, and library-only projects
 - **Confidence-aware output**: separates verified static findings, preflight warnings, and areas that need external evidence
 - **Actionable deliverables**: generates `ANDROID-AUDIT-REPORT.md` and `ANDROID-ACTION-PLAN.md`
+- **Small public surface**: 6 skills cover audit, engineering, quality, UI, release, and security
 
 ## Quick Start
 
@@ -131,7 +132,7 @@ If category evidence is incomplete, the scoring step can withhold a final 0-100 
 
 ```text
 skills/android/            Main skill, rules, schemas, scripts, references
-skills/android-*/          Category-specific skills
+skills/android-*/          5 public specialists plus internal GUIDE.md modules
 agents/android-*.md        Specialist audit agents
 tests/                     Audit pipeline tests
 ```

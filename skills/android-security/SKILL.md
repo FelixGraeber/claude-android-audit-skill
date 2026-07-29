@@ -5,8 +5,6 @@ description: >
   manifest exposure, hardcoded secrets, WebView handling, storage posture, and
   build obfuscation evidence. Triggers on: "security", "OWASP", "permissions",
   "encryption", "WebView", "certificate pinning".
-user-invokable: true
-argument-hint: "[path]"
 ---
 
 # Android Security Audit

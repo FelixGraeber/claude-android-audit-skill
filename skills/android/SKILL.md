@@ -6,8 +6,6 @@ description: >
   evidence with explicit confidence and deterministic gate caps. Supports
   Kotlin/Compose and XML/Java repos, including library-only projects. Triggers on:
   "android audit", "android assessment", "android review", "android project health".
-user-invokable: true
-argument-hint: "[command] [path]"
 ---
 
 # Android Project Audit Skill
@@ -26,6 +24,22 @@ argument-hint: "[command] [path]"
 | `/android testing [path]` | Testing strategy and risk coverage review |
 | `/android build [path]` | Build system and dependency hygiene review |
 | `/android playstore [path]` | Play preflight from source evidence |
+| `/android plan [path]` | Prioritized improvement roadmap |
+
+## Consolidated Skill Routing
+
+Use six public skills. Keep the detailed former specialist guides as internal
+references so no review knowledge is lost:
+
+- `android`: orchestration, full audit, and planning. Read
+  `../android-audit/GUIDE.md` or `../android-plan/GUIDE.md` when needed.
+- `android-engineering`: architecture and build system.
+- `android-quality`: performance and testing.
+- `android-ui`: design and accessibility.
+- `android-release`: platform compatibility and Play readiness.
+- `android-security`: security.
+
+Do not invoke a `GUIDE.md` file as a separate skill.
 
 ## Evidence Contract
 
